@@ -17,6 +17,7 @@ const unhealthySeconds = config.unhealthySeconds;
 
 let hostIp = false;
 let hostIpAndPort = false;
+let client = null;
 
 const init = async() => {
   // Borrowed from here: http://stackoverflow.com/questions/3653065/get-local-ip-address-in-node-js
@@ -45,10 +46,15 @@ const workloop = async() => {
   }
 
   let pods = [];
-  let client = null;
   try {
     pods = await k8s.getMongoPods();
-    client = await mongo.getClient();
+    if(client && !client.isConnected()){
+      client.close();
+      client = null;
+    }
+    if(!client){
+      client = await mongo.getClient();
+    }
   } catch (err) {
     return finish(err);
   }
@@ -73,7 +79,7 @@ const workloop = async() => {
   try {
     const status = await mongo.replSetGetStatus(db);
     await inReplicaSet(db, pods, status);
-    finish(null, client);
+    finish(null, null);
   } catch (err) {
     switch (err.code) {
     case 94:
@@ -95,7 +101,10 @@ const workloop = async() => {
 const finish = (err, client) => {
   if (err) console.error('Error in workloop:', err);
 
-  if (client) client.close();
+  if (client){
+    client.close();
+    client = null;
+  }
 
   setTimeout(workloop, loopSleepSeconds * 1000);
 };
